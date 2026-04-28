@@ -27,6 +27,14 @@ STAGING_DIR = ROOT / "data" / "staging"
 STAGING_DIR.mkdir(parents=True, exist_ok=True)
 
 
+# Known source data inconsistencies — fix early, before staging.
+# products.csv has "GTX Pro"; sales_pipeline.csv has "GTXPro". Affects 1480 rows.
+# Discovered via orphan-reference diagnostic in Stage 5.
+PRODUCT_NAME_FIXES = {
+    "GTXPro": "GTX Pro",
+}
+
+
 # ---------- Cleaning functions: one per source file ----------
 
 def _clean_accounts(df: pd.DataFrame) -> pd.DataFrame:
@@ -66,6 +74,13 @@ def _clean_sales_pipeline(df: pd.DataFrame) -> pd.DataFrame:
     for col in ("opportunity_id", "sales_agent", "product", "account", "deal_stage"):
         if col in df.columns:
             df[col] = df[col].astype("string").str.strip()
+
+    # Normalize known product name inconsistencies before they cause join misses
+    if "product" in df.columns:
+        before_fix = (df["product"] == "GTXPro").sum()
+        df["product"] = df["product"].replace(PRODUCT_NAME_FIXES)
+        if before_fix:
+            log.info("  normalized %d 'GTXPro' values to 'GTX Pro'", before_fix)
 
     # Maven uses YYYY-MM-DD strings; coerce errors to NaT rather than crash
     for col in ("engage_date", "close_date"):
